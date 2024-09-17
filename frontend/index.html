@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wordle 풀이</title>
+    <style>
+        /* 각 입력 상자 스타일 */
+        input {
+            width: 30px;
+            text-align: center;
+            font-size: 20px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>이게 답일지도?</h2>
+    <div id="suggestions">
+        <!-- Jinja2 템플릿을 이용해 서버에서 전달된 추천 단어를 표시 -->
+        <ul>
+            {% for suggestion in suggestions %}
+                <li>{{ suggestion }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+
+    <div id="attempts-container">
+        <!-- 첫 번째 기회: 기본 입력 상자 세트 -->
+        <div class="attempt" id="attempt1">
+            <label>기회 1: </label>
+            <input type="text" id="box1_1" maxlength="1" oninput="moveToNext(this, 'box1_2')" onkeydown="handleKeydown(event, this, '')" onclick="changeColor(this)" data-click-count="0">
+            <input type="text" id="box1_2" maxlength="1" oninput="moveToNext(this, 'box1_3')" onkeydown="handleKeydown(event, this, 'box1_1')" onclick="changeColor(this)" data-click-count="0">
+            <input type="text" id="box1_3" maxlength="1" oninput="moveToNext(this, 'box1_4')" onkeydown="handleKeydown(event, this, 'box1_2')" onclick="changeColor(this)" data-click-count="0">
+            <input type="text" id="box1_4" maxlength="1" oninput="moveToNext(this, 'box1_5')" onkeydown="handleKeydown(event, this, 'box1_3')" onclick="changeColor(this)" data-click-count="0">
+            <input type="text" id="box1_5" maxlength="1" oninput="moveToNext(this, '')" onkeydown="handleKeydown(event, this, 'box1_4')" onclick="changeColor(this)" data-click-count="0">
+        </div>
+    </div>
+
+    <script>
+        let attemptCount = 1;
+
+        function moveToNext(current, nextId) {
+            current.value = current.value.replace(/[^a-zA-Z]/g, '');
+            
+            // 입력이 완료되면 다음 상자로 이동
+            if (current.value.length === 1 && nextId) {
+                const nextElement = document.getElementById(nextId);
+                if (nextElement) {
+                    nextElement.focus();
+                }
+            }
+        }
+
+        function handleKeydown(event, current, prevId) {
+            // Backspace 키가 눌렸고 현재 입력 상자가 비어있을 때 이전 상자로 이동
+            if (event.key === 'Backspace' && current.value === '' && prevId) {
+                const prevElement = document.getElementById(prevId);
+                if (prevElement) {
+                    prevElement.focus();
+                }
+            }
+
+            // Enter 키가 눌렸을 때 입력된 값들을 제출
+            if (event.key === 'Enter') {
+                submitInput();
+            }
+        }
+
+        // 입력된 5글자를 제출하는 함수
+        async function submitInput() {
+            const inputValues = [];
+            const clickCounts = [];
+
+            for (let i = 1; i <= 5; i++) {
+                const box = document.getElementById(`box${attemptCount}_${i}`);
+                inputValues.push(box.value);
+                clickCounts.push(box.getAttribute('data-click-count'));
+            }
+
+            const finalText = inputValues.join('');
+
+            // 클릭되지 않은 박스가 있는지 확인
+            const notClicked = clickCounts.some(count => count === '0');
+            if (notClicked) {
+                alert('모든 상자를 최소 한 번 클릭해야 합니다.');
+                return;
+            }
+
+            if (finalText.length === 5) {
+                // 서버로 데이터 전송
+                const response = await fetch('/submit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: finalText, clicks: clickCounts })
+                });
+
+                const data = await response.json();
+                updateSuggestions(data.suggestions);
+                createNewAttempt();
+            } else {
+                alert('모든 입력 상자에 글자를 입력해주세요.');
+            }
+        }
+
+        // 추천 단어를 업데이트하는 함수
+        function updateSuggestions(suggestions) {
+            const suggestionsElement = document.getElementById('suggestions');
+            suggestionsElement.innerHTML = '';
+
+            const ul = document.createElement('ul');
+            suggestions.forEach(suggestion => {
+                const li = document.createElement('li');
+                li.textContent = suggestion;
+                ul.appendChild(li);
+            });
+
+            suggestionsElement.appendChild(ul);
+        }
+
+        function createNewAttempt() {
+            attemptCount += 1;
+
+            const newAttempt = document.createElement('div');
+            newAttempt.className = 'attempt';
+            newAttempt.id = `attempt${attemptCount}`;
+
+            const label = document.createElement('label');
+            label.textContent = `기회 ${attemptCount}: `;
+            newAttempt.appendChild(label);
+
+            for (let i = 1; i <= 5; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = `box${attemptCount}_${i}`;
+                input.maxLength = 1;
+                input.setAttribute('data-click-count', '0');
+                input.onclick = function() { changeColor(input); };
+                input.oninput = function() { moveToNext(input, `box${attemptCount}_${i + 1}`); };
+                input.onkeydown = function(event) { handleKeydown(event, input, `box${attemptCount}_${i - 1}`); };
+                newAttempt.appendChild(input);
+            }
+
+            document.getElementById('attempts-container').appendChild(newAttempt);
+
+            // 새로 생성된 시도 세트의 첫 번째 상자에 포커스 설정
+            document.getElementById(`box${attemptCount}_1`).focus();
+        }
+
+        // 색상을 변경하는 함수
+        function changeColor(input) {
+            let clickCount = input.getAttribute('data-click-count') || 0;
+            clickCount = (parseInt(clickCount) + 1) % 4;  // 0, 1, 2, 3 반복
+
+            switch(clickCount) {
+                case 0:
+                    input.style.backgroundColor = '';
+                    input.style.color = 'black';  // 기본 글자 색상으로 설정
+                    break;
+                case 1:
+                    input.style.backgroundColor = 'gray';
+                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    break;
+                case 2:
+                    input.style.backgroundColor = '#d4af37';
+                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    break;
+                case 3:
+                    input.style.backgroundColor = 'green';
+                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    break;
+            }
+
+            input.setAttribute('data-click-count', clickCount);
+        }
+
+
+        // 페이지가 로드되었을 때 1번 상자에 포커스 설정
+        window.onload = function() {
+            document.getElementById('box1_1').focus();
+        };
+
+    </script>
+</body>
+</html>
