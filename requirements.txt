@@ -62,7 +62,7 @@ python-multipart==0.0.18
 pytz==2024.2
 PyYAML==6.0.2
 pyzmq 
-requests==2.32.3
+requests==2.32.4
 rich==13.8.1
 ruff==0.6.5
 semantic-version==2.10.0
