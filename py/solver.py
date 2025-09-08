@@ -8,7 +8,9 @@ class WordleSolver:
                  path_vocab='../dictionary/full_vocabs.txt',
                  path_unique='../dictionary/unique.txt'
                 ):
-        self.vocabs = self._get_words(path_vocab)
+        # Load all dictionary files into a set
+        self.all_words = self._load_all_dictionaries()
+        self.vocabs = list(self.all_words)  # Convert set to list for compatibility
         self.unique = self._get_words(path_unique)
         self.flag_first = True
         self.no = set() # 절대 안들어가는 알파벳
@@ -30,6 +32,42 @@ class WordleSolver:
             lines = f.readlines()
             words = [line.strip() for line in lines]
         return words
+    
+    def _load_all_dictionaries(self):
+        '''
+        Load all dictionary files and combine them into a set
+        returns
+            (set) 모든 사전의 단어들
+        '''
+        import os
+        import glob
+        
+        # Get the directory containing this script
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        dict_dir = os.path.join(current_dir, '..', 'dictionary')
+        dict_dir = os.path.normpath(dict_dir)
+        
+        all_words = set()
+        
+        # Find all .txt files in dictionary directory
+        pattern = os.path.join(dict_dir, '*.txt')
+        dict_files = glob.glob(pattern)
+        
+        print(f'Loading dictionaries from: {dict_dir}')
+        
+        for dict_file in dict_files:
+            try:
+                with open(dict_file, 'r', encoding='utf-8') as f:
+                    words = [line.strip().lower() for line in f.readlines() if line.strip()]
+                    # Filter for 5-letter words only
+                    five_letter_words = [word for word in words if len(word) == 5 and word.isalpha()]
+                    all_words.update(five_letter_words)
+                    print(f'Loaded {len(five_letter_words)} words from {os.path.basename(dict_file)}')
+            except Exception as e:
+                print(f'Error loading {dict_file}: {e}')
+        
+        print(f'Total unique 5-letter words: {len(all_words)}')
+        return all_words
 
 
     def _exclude_letters(self):
@@ -58,7 +96,8 @@ class WordleSolver:
                 pattern += f"{y}"
             else:
                 pattern += '.'
-
+        # 전체 5글자 일치 보장
+        pattern += '$'
         filtered = set()
         for v in self.vocabs:
             if re.match(pattern, v):
@@ -68,40 +107,48 @@ class WordleSolver:
 
     def _filter_misplaced(self):
         '''
-        (list) 필터링 후 단어장
+        노란색(wrong position) 글자들로 필터링
         '''
-        while True:
-            if len(self.update_wrong)==0:
-                break
+        # update_wrong에서 wrong 패턴들을 처리
+        while self.update_wrong:
             wrong = self.update_wrong.pop()
-            for i, v in enumerate(wrong):
-                if v:
+            for i, letter in enumerate(wrong):
+                if letter:
+                    # 해당 위치에 해당 글자가 오면 안됨
                     placeholder = [None] * 5
-                    placeholder[i] = v
+                    placeholder[i] = letter
                     self.wrong.add(tuple(placeholder))
-                    self.including.add(v)
+                    # 하지만 단어에는 포함되어야 함
+                    self.including.add(letter)
 
-        for wrong in self.wrong:
-            pattern = '^'
-            for w in wrong:
-                if w:
-                    pattern += w
-                else:
-                    pattern += '.'
-
-            filtered = set()
-            for v in self.vocabs:
-                match_flag = True
-                if re.match(pattern, v):
-                    match_flag = False
-                for m in self.including:
-                    if m not in v:
-                        match_flag = False
-                        break
-                if match_flag:
-                    filtered.add(v)
-
-            self.vocabs = sorted(filtered)
+        # 필터링 수행
+        filtered = []
+        for word in self.vocabs:
+            valid = True
+            
+            # 1. including의 모든 글자가 포함되어야 함
+            for required_letter in self.including:
+                if required_letter.lower() not in word.lower():
+                    valid = False
+                    break
+            
+            if not valid:
+                continue
+                
+            # 2. wrong 위치에는 해당 글자가 오면 안됨
+            for wrong_pattern in self.wrong:
+                for pos, forbidden_letter in enumerate(wrong_pattern):
+                    if forbidden_letter and len(word) > pos:
+                        if word[pos].lower() == forbidden_letter.lower():
+                            valid = False
+                            break
+                if not valid:
+                    break
+                    
+            if valid:
+                filtered.append(word)
+                
+        self.vocabs = sorted(filtered)
 
 
     def _update_exclude(self):
@@ -109,8 +156,9 @@ class WordleSolver:
         args
             no: (set) 절대 안들어가는 알파벳
         '''
-        self.no = set(self.no) - set(self.yes)
-        [self.no.add(v) for v in self.no]
+        # 이미 확정된 초록(yes) 글자는 제외 집합에서 제거
+        yes_letters = {c for c in self.yes if c}
+        self.no = set(self.no) - yes_letters
         self._exclude_letters()
         print('excluding:', sorted(self.no))
 
@@ -130,7 +178,38 @@ class WordleSolver:
         self._filter_misplaced()
     
 
-    def sample_word(self, yes=None, wrong=None, no=None, flag=True, itr=5):
+    def _rank_by_frequency(self, candidates, alpha=0.5, dup_penalty=0.25):
+        '''
+        남은 후보를 문자/자리 빈도 기반으로 스코어링하여 내림차순 정렬 반환
+        '''
+        # 빈도 집계
+        letter_freq = {chr(c): 0 for c in range(ord('a'), ord('z')+1)}
+        pos_freq = [dict() for _ in range(5)]
+
+        for w in self.vocabs:
+            seen = set()
+            for i, ch in enumerate(w):
+                # 위치별 빈도
+                pos_freq[i][ch] = pos_freq[i].get(ch, 0) + 1
+                # 글자 빈도는 단어 내 중복은 1회만 카운트
+                if ch not in seen:
+                    letter_freq[ch] += 1
+                    seen.add(ch)
+
+        def score(word):
+            uniq = set(word)
+            # 전역 글자 빈도 합 + 자리별 빈도 가중치
+            s = sum(letter_freq.get(ch, 0) for ch in uniq)
+            s += alpha * sum(pos_freq[i].get(word[i], 0) for i in range(5))
+            # 중복 패널티
+            s -= dup_penalty * (len(word) - len(uniq))
+            return s
+
+        ranked = sorted(candidates, key=score, reverse=True)
+        return ranked
+
+
+    def sample_word(self, yes=None, wrong=None, no=None, flag=True, itr=5, strategy='random'):
         '''
         정답일 것 같은 단어 추천
         
@@ -140,6 +219,7 @@ class WordleSolver:
             no: (set, list) 절대 안들어가는 알파벳
             flag: (bool) 첫 시도냐(true) 아니냐(false)
             itr: (int) 추천 단어 개수
+            strategy: (str) 'random' 또는 'freq'
         '''
         print('sampling...')
         if yes:
@@ -162,22 +242,43 @@ class WordleSolver:
         solutions = dict()
         suggestions = []
 
-        if self.flag_first and flag:
-            # 첫 라운드면
-            for _ in range(itr):
-                idx = int(random.random() * len(self.unique))
-                print(self.unique[idx])
-                suggestions.append(self.unique[idx])
+        candidates = self.vocabs
+        if strategy == 'random':
+            if self.flag_first and flag:
+                # 첫 라운드면 unique에서 랜덤 추천
+                for _ in range(min(itr, len(self.unique))):
+                    idx = int(random.random() * len(self.unique))
+                    suggestions.append(self.unique[idx])
+                self.flag_first = False
+            else:
+                print('vocabs:', len(self.vocabs))
+                for _ in range(min(itr, len(self.vocabs))):
+                    idx = int(random.random() * len(self.vocabs))
+                    suggestions.append(self.vocabs[idx])
+        elif strategy == 'freq':
+            # 빈도 기반 스코어 상위 반환
+            ranked = self._rank_by_frequency(candidates)
+            suggestions = ranked[:itr]
             self.flag_first = False
         else:
-            print('vocabs:',len(self.vocabs))
-            for _ in range(itr):
+            # 알 수 없는 전략은 랜덤으로 폴백
+            print(f"Unknown strategy '{strategy}', fallback to random")
+            for _ in range(min(itr, len(self.vocabs))):
                 idx = int(random.random() * len(self.vocabs))
-                print(self.vocabs[idx])
                 suggestions.append(self.vocabs[idx])
 
         print('# of words:', len(self.vocabs))
 
-        solutions['word_nums'] = len(self.vocabs)
-        solutions['suggestions'] = suggestions
+        # 결과가 없을 때 정확히 알려주기
+        if len(self.vocabs) == 0:
+            print("No words match all conditions!")
+            solutions['word_nums'] = 0
+            solutions['suggestions'] = []
+            solutions['no_results'] = True
+            solutions['message'] = "조건을 모두 만족하는 단어가 사전에 없습니다. 이전 시도의 색상 설정을 확인하거나, 더 많은 단어가 포함된 사전이 필요할 수 있습니다."
+        else:
+            solutions['word_nums'] = len(self.vocabs)
+            solutions['suggestions'] = suggestions
+            solutions['no_results'] = False
+            
         return solutions

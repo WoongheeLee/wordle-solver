@@ -5,41 +5,231 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Wordle 풀이</title>
     <style>
-        /* 각 입력 상자 스타일 */
-        input {
-            width: 30px;
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background: #ffffff;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 30px;
+        }
+
+        h2 {
             text-align: center;
-            font-size: 20px;
-            margin: 5px;
+            color: #000000;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        #suggestions {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        #suggestions ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        #suggestions li {
+            background: #6c757d;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            min-width: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        #suggestions li:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .attempt {
+            margin: 15px 0;
+            padding: 15px;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            position: relative;
+        }
+
+        .attempt.current {
+            /* No special styling for current attempt */
+        }
+
+        .attempt label {
+            font-weight: 600;
+            color: #000000;
+            min-width: 80px;
+            font-size: 16px;
+        }
+
+        input {
+            width: 58px;
+            height: 58px;
+            text-align: center;
+            font-size: 32px;
+            font-weight: bold;
+            margin: 2px;
+            border: 2px solid #d3d6da;
+            background: #ffffff;
+            color: #000000;
+            transition: all 0.2s ease;
+            text-transform: uppercase;
+            box-sizing: border-box;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #878a8c;
+        }
+
+        input:hover {
+            border-color: #878a8c;
+        }
+
+        .control-buttons {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-back {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-back:hover {
+            background: #5a6268;
+        }
+
+        .btn-back:disabled {
+            background: #d3d6da;
+            cursor: not-allowed;
+        }
+
+        .btn-pagination {
+            background: #6c757d;
+            color: white;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-pagination:hover:not(:disabled) {
+            background: #5a6268;
+        }
+
+        .btn-pagination:disabled {
+            background: #d3d6da;
+            cursor: not-allowed;
+        }
+
+        .disabled {
+            pointer-events: none;
+            opacity: 0.6;
         }
     </style>
 </head>
 <body>
-    <h2>이게 답일지도?</h2>
-    <div id="suggestions">
-        <!-- Jinja2 템플릿을 이용해 서버에서 전달된 추천 단어를 표시 -->
-        <ul>
-            {% for suggestion in suggestions %}
-                <li>{{ suggestion }}</li>
-            {% endfor %}
-        </ul>
-    </div>
+    <div class="container">
+        <h2>🎯 Wordle 솔버</h2>
+        <div id="suggestions">
+            <!-- 추천 단어 헤더 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0; color: #000; font-size: 18px;">추천 단어</h3>
+                <div id="pagination-info" style="font-size: 14px; color: #6c757d;"></div>
+            </div>
+            
+            <!-- 결과 없음 메시지 -->
+            <div id="no-results-message" style="display: none; background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 14px;">
+                <strong>🚫 조건에 맞는 단어가 사전에 없습니다!</strong><br>
+                <div id="no-results-details"></div>
+                <div style="margin-top: 8px; font-size: 13px;">
+                    • 이전 시도의 색상 설정을 다시 확인해주세요.<br>
+                    • 또는 더 많은 단어가 포함된 사전이 필요할 수 있습니다.
+                </div>
+            </div>
+            
+            <!-- 축하 메시지 -->
+            <div id="congratulations-message" style="display: none; background: #d4f5d4; border: 1px solid #4caf50; color: #1b5e20; padding: 15px; border-radius: 6px; margin-bottom: 20px; text-align: center; font-size: 16px;">
+                <strong>🎉 축하합니다!</strong> 정답 <span id="congratulations-word" style="font-weight: bold; color: #2e7d32;"></span>을 맞추셨습니다!
+            </div>
+            
+            <!-- 추천 단어 리스트 -->
+            <ul id="suggestions-list">
+                {% for suggestion in suggestions %}
+                    <li>{{ suggestion }}</li>
+                {% endfor %}
+            </ul>
+            
+            <!-- 페이지네이션 컨트롤 -->
+            <div id="pagination-controls" style="margin-top: 15px; display: flex; justify-content: center; gap: 10px; align-items: center;">
+                <button class="btn btn-pagination" id="prev-btn" onclick="changePage(-1)" disabled>‹ 이전</button>
+                <span id="page-indicator" style="font-size: 14px; color: #6c757d; min-width: 80px; text-align: center;">1 / 1</span>
+                <button class="btn btn-pagination" id="next-btn" onclick="changePage(1)" disabled>다음 ›</button>
+            </div>
+        </div>
 
+        <div class="control-buttons">
+            <button class="btn btn-back" id="back-btn" onclick="goBackToAttempt()" disabled>⬅️ 이전 시도로</button>
+        </div>
 
-    <div id="attempts-container">
-        <!-- 첫 번째 기회: 기본 입력 상자 세트 -->
-        <div class="attempt" id="attempt1">
-            <label>기회 1: </label>
-            <input type="text" id="box1_1" maxlength="1" oninput="moveToNext(this, 'box1_2')" onkeydown="handleKeydown(event, this, '')" onclick="changeColor(this)" data-click-count="0">
-            <input type="text" id="box1_2" maxlength="1" oninput="moveToNext(this, 'box1_3')" onkeydown="handleKeydown(event, this, 'box1_1')" onclick="changeColor(this)" data-click-count="0">
-            <input type="text" id="box1_3" maxlength="1" oninput="moveToNext(this, 'box1_4')" onkeydown="handleKeydown(event, this, 'box1_2')" onclick="changeColor(this)" data-click-count="0">
-            <input type="text" id="box1_4" maxlength="1" oninput="moveToNext(this, 'box1_5')" onkeydown="handleKeydown(event, this, 'box1_3')" onclick="changeColor(this)" data-click-count="0">
-            <input type="text" id="box1_5" maxlength="1" oninput="moveToNext(this, '')" onkeydown="handleKeydown(event, this, 'box1_4')" onclick="changeColor(this)" data-click-count="0">
+        <div id="attempts-container">
+            <!-- 첫 번째 기회: 기본 입력 상자 세트 -->
+            <div class="attempt current" id="attempt1">
+                <label>기회 1: </label>
+                <input type="text" id="box1_1" maxlength="1" oninput="moveToNext(this, 'box1_2')" onkeydown="handleKeydown(event, this, '')" onclick="changeColor(this)" data-click-count="0">
+                <input type="text" id="box1_2" maxlength="1" oninput="moveToNext(this, 'box1_3')" onkeydown="handleKeydown(event, this, 'box1_1')" onclick="changeColor(this)" data-click-count="0">
+                <input type="text" id="box1_3" maxlength="1" oninput="moveToNext(this, 'box1_4')" onkeydown="handleKeydown(event, this, 'box1_2')" onclick="changeColor(this)" data-click-count="0">
+                <input type="text" id="box1_4" maxlength="1" oninput="moveToNext(this, 'box1_5')" onkeydown="handleKeydown(event, this, 'box1_3')" onclick="changeColor(this)" data-click-count="0">
+                <input type="text" id="box1_5" maxlength="1" oninput="moveToNext(this, '')" onkeydown="handleKeydown(event, this, 'box1_4')" onclick="changeColor(this)" data-click-count="0">
+            </div>
         </div>
     </div>
 
     <script>
         let attemptCount = 1;
+        let attemptHistory = []; // 시도 기록 저장
+        let allSuggestions = []; // 모든 추천 단어 저장
+        let currentPage = 1;
+        const wordsPerPage = 5;
+        let confirmedGreenPositions = {}; // {위치: 문자} 형태로 확정된 녹색 위치 저장
 
         function moveToNext(current, nextId) {
             current.value = current.value.replace(/[^a-zA-Z]/g, '');
@@ -54,6 +244,8 @@
         }
 
         function handleKeydown(event, current, prevId) {
+            console.log('Key pressed:', event.key); // 디버깅용
+            
             // Backspace 키가 눌렸고 현재 입력 상자가 비어있을 때 이전 상자로 이동
             if (event.key === 'Backspace' && current.value === '' && prevId) {
                 const prevElement = document.getElementById(prevId);
@@ -64,12 +256,14 @@
 
             // Enter 키가 눌렸을 때 입력된 값들을 제출
             if (event.key === 'Enter') {
+                console.log('Enter key pressed, calling submitInput'); // 디버깅용
                 submitInput();
             }
         }
 
         // 입력된 5글자를 제출하는 함수
         async function submitInput() {
+            console.log('submitInput called, attemptCount:', attemptCount); // 디버깅용
             const inputValues = [];
             const clickCounts = [];
 
@@ -81,6 +275,15 @@
 
             const finalText = inputValues.join('');
 
+            // 모든 글자가 녹색인지 확인 (우승 조건)
+            const allGreen = clickCounts.every(count => count === '3');
+            if (allGreen) {
+                showCongratulations(finalText);
+                // 사용자 사전에 단어 추가 확인
+                offerToAddWord(finalText);
+                return; // 게임 종료, 더 이상 진행하지 않음
+            }
+            
             // 클릭되지 않은 박스가 있는지 확인
             const notClicked = clickCounts.some(count => count === '0');
             if (notClicked) {
@@ -89,6 +292,26 @@
             }
 
             if (finalText.length === 5) {
+                // 현재 시도 상태를 히스토리에 저장 (제출 전)
+                const attemptData = {
+                    attemptNumber: attemptCount,
+                    inputValues: [...inputValues],
+                    clickCounts: [...clickCounts]
+                };
+                attemptHistory.push(attemptData);
+                
+                // 녹색 위치 업데이트 (제출 시에 확정)
+                for (let i = 1; i <= 5; i++) {
+                    if (clickCounts[i-1] === '3') {  // 녹색으로 표시된 위치
+                        confirmedGreenPositions[i] = inputValues[i-1].toUpperCase();
+                    }
+                }
+
+                // 현재 시도를 비활성화하고 스타일 변경
+                const currentAttempt = document.getElementById(`attempt${attemptCount}`);
+                currentAttempt.classList.remove('current');
+                currentAttempt.classList.add('disabled');
+
                 // 서버로 데이터 전송
                 const response = await fetch('/submit', {
                     method: 'POST',
@@ -99,33 +322,173 @@
                 });
 
                 const data = await response.json();
-                updateSuggestions(data.suggestions);
+                updateSuggestions(data.suggestions, data.no_results || false, data.message || '');
                 createNewAttempt();
+                
+                // 뒤로 가기 버튼 활성화
+                document.getElementById('back-btn').disabled = false;
             } else {
                 alert('모든 입력 상자에 글자를 입력해주세요.');
             }
         }
 
-        // 추천 단어를 업데이트하는 함수
-        function updateSuggestions(suggestions) {
-            const suggestionsElement = document.getElementById('suggestions');
-            suggestionsElement.innerHTML = '';
+        // 추천 단어를 업데이트하는 함수  
+        function updateSuggestions(suggestions, noResults = false, message = '') {
+            allSuggestions = suggestions;
+            currentPage = 1;
+            
+            // 결과 없음 메시지 표시/숨김
+            const noResultsMsg = document.getElementById('no-results-message');
+            if (noResults) {
+                noResultsMsg.style.display = 'block';
+                if (message) {
+                    document.getElementById('no-results-details').textContent = message;
+                }
+            } else {
+                noResultsMsg.style.display = 'none';
+            }
+            
+            displayCurrentPage();
+        }
+        
+        // 축하 메시지 표시
+        function showCongratulations(word) {
+            const congratsMsg = document.getElementById('congratulations-message');
+            const congratsWord = document.getElementById('congratulations-word');
+            
+            congratsWord.textContent = word.toUpperCase();
+            congratsMsg.style.display = 'block';
+        }
 
-            const ul = document.createElement('ul');
-            suggestions.forEach(suggestion => {
+        // 사용자에게 단어를 사전에 추가할 것인지 물어보는 함수
+        async function offerToAddWord(word) {
+            const userChoice = confirm(`정답 '${word.toUpperCase()}'를 사용자 사전에 추가하시겠습니까?\n\n추가하면 다음에 솔버를 사용할 때 이 단어도 후보에 포함됩니다.`);
+            
+            if (userChoice) {
+                try {
+                    const response = await fetch('/add_word', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ word: word })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        if (data.added) {
+                            alert(`✅ ${data.message}`);
+                        } else {
+                            alert(`ℹ️ ${data.message}`);
+                        }
+                    } else {
+                        alert(`❌ 오류: ${data.error}`);
+                    }
+                } catch (error) {
+                    console.error('단어 추가 중 오류:', error);
+                    alert('❌ 단어 추가 중 네트워크 오류가 발생했습니다.');
+                }
+            }
+        }
+
+        // 현재 페이지의 단어들을 표시하는 함수
+        function displayCurrentPage() {
+            const startIndex = (currentPage - 1) * wordsPerPage;
+            const endIndex = startIndex + wordsPerPage;
+            const currentSuggestions = allSuggestions.slice(startIndex, endIndex);
+            
+            const suggestionsList = document.getElementById('suggestions-list');
+            suggestionsList.innerHTML = '';
+            
+            currentSuggestions.forEach(suggestion => {
                 const li = document.createElement('li');
                 li.textContent = suggestion;
-                ul.appendChild(li);
+                li.onclick = function() { fillSuggestion(suggestion); };
+                suggestionsList.appendChild(li);
             });
+            
+            // 페이지네이션 정보 업데이트
+            updatePaginationControls();
+        }
 
-            suggestionsElement.appendChild(ul);
+        // 페이지네이션 컨트롤 업데이트
+        function updatePaginationControls() {
+            const totalPages = Math.ceil(allSuggestions.length / wordsPerPage);
+            
+            // 페이지 정보 표시
+            document.getElementById('page-indicator').textContent = `${currentPage} / ${totalPages}`;
+            
+            // 전체 단어 수 표시
+            const noResultsMsg = document.getElementById('no-results-message');
+            const isShowingNoResults = noResultsMsg.style.display !== 'none';
+            
+            if (isShowingNoResults && allSuggestions.length === 0) {
+                document.getElementById('pagination-info').textContent = '매칭되는 단어 없음';
+            } else {
+                document.getElementById('pagination-info').textContent = `총 ${allSuggestions.length}개 단어`;
+            }
+            
+            // 버튼 상태 업데이트
+            document.getElementById('prev-btn').disabled = currentPage === 1;
+            document.getElementById('next-btn').disabled = currentPage === totalPages || totalPages === 0;
+            
+            // 페이지네이션 컨트롤 표시/숨김
+            const paginationControls = document.getElementById('pagination-controls');
+            paginationControls.style.display = totalPages > 1 ? 'flex' : 'none';
+            
+            // 결과가 없으면 페이지네이션 숨김
+            if (allSuggestions.length === 0) {
+                paginationControls.style.display = 'none';
+            }
+        }
+
+        // 페이지 변경 함수
+        function changePage(direction) {
+            const totalPages = Math.ceil(allSuggestions.length / wordsPerPage);
+            const newPage = currentPage + direction;
+            
+            if (newPage >= 1 && newPage <= totalPages) {
+                currentPage = newPage;
+                displayCurrentPage();
+            }
+        }
+
+        // 추천 단어를 현재 시도 칸에 채우는 함수
+        function fillSuggestion(word) {
+            if (word.length !== 5) return;
+            
+            // 현재 시도의 모든 입력 칸을 초기화
+            for (let i = 1; i <= 5; i++) {
+                const box = document.getElementById(`box${attemptCount}_${i}`);
+                const letter = word[i-1].toUpperCase();
+                
+                box.value = letter;
+                box.setAttribute('data-click-count', '0');
+                
+                // 기본 색상으로 리셋
+                box.style.backgroundColor = '#ffffff';
+                box.style.color = '#000000';
+                box.style.borderColor = '#d3d6da';
+                
+                // 녹색 위치에 맞는 문자가 있으면 자동으로 녹색 적용
+                if (confirmedGreenPositions[i] && confirmedGreenPositions[i] === letter) {
+                    box.setAttribute('data-click-count', '3');
+                    box.style.backgroundColor = '#6aaa64';
+                    box.style.color = '#ffffff';
+                    box.style.borderColor = '#6aaa64';
+                }
+            }
+            
+            // 첫 번째 상자에 포커스
+            document.getElementById(`box${attemptCount}_1`).focus();
         }
 
         function createNewAttempt() {
             attemptCount += 1;
 
             const newAttempt = document.createElement('div');
-            newAttempt.className = 'attempt';
+            newAttempt.className = 'attempt current';
             newAttempt.id = `attempt${attemptCount}`;
 
             const label = document.createElement('label');
@@ -139,8 +502,12 @@
                 input.maxLength = 1;
                 input.setAttribute('data-click-count', '0');
                 input.onclick = function() { changeColor(input); };
-                input.oninput = function() { moveToNext(input, `box${attemptCount}_${i + 1}`); };
-                input.onkeydown = function(event) { handleKeydown(event, input, `box${attemptCount}_${i - 1}`); };
+                input.oninput = function() { 
+                    moveToNext(input, i < 5 ? `box${attemptCount}_${i + 1}` : '');
+                    // 입력 후 녹색 위치 확인
+                    checkAndApplyGreenPosition(input, i);
+                };
+                input.onkeydown = function(event) { handleKeydown(event, input, i > 1 ? `box${attemptCount}_${i - 1}` : ''); };
                 newAttempt.appendChild(input);
             }
 
@@ -150,37 +517,135 @@
             document.getElementById(`box${attemptCount}_1`).focus();
         }
 
+        // 입력 후 녹색 위치에 맞는 문자인지 확인하고 자동으로 녹색 적용
+        function checkAndApplyGreenPosition(input, position) {
+            const letter = input.value.toUpperCase();
+            if (confirmedGreenPositions[position] && confirmedGreenPositions[position] === letter) {
+                input.setAttribute('data-click-count', '3');
+                input.style.backgroundColor = '#6aaa64';
+                input.style.color = '#ffffff';
+                input.style.borderColor = '#6aaa64';
+            }
+        }
+
         // 색상을 변경하는 함수
         function changeColor(input) {
-            let clickCount = input.getAttribute('data-click-count') || 0;
+            console.log('changeColor called for input:', input.id); // 디버깅용
+            
+            let clickCount = input.getAttribute('data-click-count') || '0';
             clickCount = (parseInt(clickCount) + 1) % 4;  // 0, 1, 2, 3 반복
+            
+            console.log('Changing to click count:', clickCount); // 디버깅용
 
             switch(clickCount) {
                 case 0:
-                    input.style.backgroundColor = '';
-                    input.style.color = 'black';  // 기본 글자 색상으로 설정
+                    // Default state - white background
+                    input.style.backgroundColor = '#ffffff';
+                    input.style.color = '#000000';
+                    input.style.borderColor = '#d3d6da';
                     break;
                 case 1:
-                    input.style.backgroundColor = 'gray';
-                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    // Letter not in word - gray (like Wordle)
+                    input.style.backgroundColor = '#787c7e';
+                    input.style.color = '#ffffff';
+                    input.style.borderColor = '#787c7e';
                     break;
                 case 2:
-                    input.style.backgroundColor = '#d4af37';
-                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    // Letter in word, wrong position - yellow (like Wordle)
+                    input.style.backgroundColor = '#c9b458';
+                    input.style.color = '#ffffff';
+                    input.style.borderColor = '#c9b458';
                     break;
                 case 3:
-                    input.style.backgroundColor = 'green';
-                    input.style.color = 'white';  // 글자 색상 흰색으로 설정
+                    // Letter in correct position - green (like Wordle)
+                    input.style.backgroundColor = '#6aaa64';
+                    input.style.color = '#ffffff';
+                    input.style.borderColor = '#6aaa64';
                     break;
             }
 
             input.setAttribute('data-click-count', clickCount);
         }
 
+        // 이전 시도로 돌아가는 함수
+        function goBackToAttempt() {
+            if (attemptHistory.length === 0) return;
 
-        // 페이지가 로드되었을 때 1번 상자에 포커스 설정
+            // 현재 시도 삭제
+            const currentAttempt = document.getElementById(`attempt${attemptCount}`);
+            if (currentAttempt) {
+                currentAttempt.remove();
+            }
+
+            // 히스토리에서 마지막 시도 복원
+            const lastAttempt = attemptHistory.pop();
+            attemptCount = lastAttempt.attemptNumber;
+
+            // 이전 시도를 다시 활성화
+            const previousAttempt = document.getElementById(`attempt${attemptCount}`);
+            previousAttempt.classList.remove('disabled');
+            previousAttempt.classList.add('current');
+
+            // 입력값과 색상 복원
+            for (let i = 1; i <= 5; i++) {
+                const box = document.getElementById(`box${attemptCount}_${i}`);
+                box.value = lastAttempt.inputValues[i-1];
+                box.setAttribute('data-click-count', lastAttempt.clickCounts[i-1]);
+                
+                // 색상 복원
+                const clickCount = parseInt(lastAttempt.clickCounts[i-1]);
+                switch(clickCount) {
+                    case 0:
+                        // Default state
+                        box.style.backgroundColor = '#ffffff';
+                        box.style.color = '#000000';
+                        box.style.borderColor = '#d3d6da';
+                        break;
+                    case 1:
+                        // Letter not in word - gray
+                        box.style.backgroundColor = '#787c7e';
+                        box.style.color = '#ffffff';
+                        box.style.borderColor = '#787c7e';
+                        break;
+                    case 2:
+                        // Letter in word, wrong position - yellow
+                        box.style.backgroundColor = '#c9b458';
+                        box.style.color = '#ffffff';
+                        box.style.borderColor = '#c9b458';
+                        break;
+                    case 3:
+                        // Letter in correct position - green
+                        box.style.backgroundColor = '#6aaa64';
+                        box.style.color = '#ffffff';
+                        box.style.borderColor = '#6aaa64';
+                        break;
+                }
+            }
+
+            // 첫 번째 상자에 포커스
+            document.getElementById(`box${attemptCount}_1`).focus();
+
+            // 히스토리가 비어있으면 뒤로 가기 버튼 비활성화
+            if (attemptHistory.length === 0) {
+                document.getElementById('back-btn').disabled = true;
+            }
+        }
+
+
+        // 페이지가 로드되었을 때 초기 설정
         window.onload = function() {
             document.getElementById('box1_1').focus();
+            
+            // 초기 추천 단어들을 allSuggestions에 저장
+            const initialSuggestions = [];
+            document.querySelectorAll('#suggestions-list li').forEach(li => {
+                initialSuggestions.push(li.textContent);
+            });
+            
+            if (initialSuggestions.length > 0) {
+                allSuggestions = initialSuggestions;
+                displayCurrentPage();
+            }
         };
 
     </script>
